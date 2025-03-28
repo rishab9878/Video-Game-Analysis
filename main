@@ -1,0 +1,101 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+
+class VideoGameSalesAnalysis:
+    def __init__(self, data_path):
+        self.raw_data = pd.read_csv(data_path)
+        self.cleaned_data = None
+        self.features = None
+        self.target = None
+        
+    def data_cleaning(self):
+        self.cleaned_data = self.raw_data.dropna(subset=['Global_Sales', 'Critic_Score', 'User_Score'])
+        
+        self.cleaned_data['User_Score'] = pd.to_numeric(self.cleaned_data['User_Score'], errors='coerce')
+        
+        self.cleaned_data['Release_Year'] = pd.to_datetime(self.cleaned_data['Year']).dt.year
+        
+        categorical_cols = ['Platform', 'Genre', 'Publisher']
+        self.cleaned_data = pd.get_dummies(self.cleaned_data, columns=categorical_cols)
+        
+    def feature_selection(self):
+        feature_columns = [
+            'Critic_Score', 'User_Score', 'Release_Year', 
+            'NA_Sales', 'EU_Sales', 'JP_Sales'
+        ]
+        
+        feature_columns.extend([col for col in self.cleaned_data.columns if col.startswith(('Platform_', 'Genre_', 'Publisher_'))])
+        
+        self.features = self.cleaned_data[feature_columns]
+        self.target = self.cleaned_data['Global_Sales']
+        
+    def train_regression_models(self):
+        X_train, X_test, y_train, y_test = train_test_split(
+            self.features, self.target, test_size=0.2, random_state=42
+        )
+        
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        
+        models = {
+            'Linear Regression': LinearRegression(),
+            'Ridge Regression': Ridge(alpha=1.0),
+            'Lasso Regression': Lasso(alpha=1.0),
+            'Random Forest': RandomForestRegressor(n_estimators=100)
+        }
+        
+        results = {}
+        for name, model in models.items():
+            model.fit(X_train_scaled, y_train)
+            y_pred = model.predict(X_test_scaled)
+            
+            results[name] = {
+                'MSE': mean_squared_error(y_test, y_pred),
+                'R2 Score': r2_score(y_test, y_pred)
+            }
+        
+        return results
+    
+    def visualize_sales_trends(self):
+        plt.figure(figsize=(15, 10))
+        
+        yearly_sales = self.cleaned_data.groupby('Release_Year')['Global_Sales'].sum()
+        plt.subplot(2, 2, 1)
+        yearly_sales.plot(kind='line', title='Global Sales by Year')
+        
+        plt.subplot(2, 2, 2)
+        platform_sales = self.cleaned_data.groupby('Platform')['Global_Sales'].sum().nlargest(10)
+        platform_sales.plot(kind='bar', title='Top 10 Platforms by Sales')
+        
+        plt.subplot(2, 2, 3)
+        genre_sales = self.cleaned_data.groupby('Genre')['Global_Sales'].sum().nlargest(10)
+        genre_sales.plot(kind='bar', title='Top 10 Genres by Sales')
+        
+        plt.tight_layout()
+        plt.savefig('video_game_sales_trends.png')
+        plt.close()
+    
+    def run_full_analysis(self):
+        self.data_cleaning()
+        self.feature_selection()
+        
+        regression_results = self.train_regression_models()
+        print("Regression Model Performance:")
+        for model, metrics in regression_results.items():
+            print(f"{model}:")
+            print(f"  Mean Squared Error: {metrics['MSE']:.4f}")
+            print(f"  R2 Score: {metrics['R2 Score']:.4f}\n")
+        
+        self.visualize_sales_trends()
+
+if __name__ == "__main__":
+    analysis = VideoGameSalesAnalysis('video_game_sales.csv')
+    analysis.run_full_analysis()
